@@ -1,5 +1,5 @@
 {
-  "name": "worker-loader",
+  "name": "codingclip-worker-loader",
   "version": "3.0.8",
   "description": "worker loader module for webpack",
   "license": "MIT",

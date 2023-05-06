@@ -1,3 +1,5 @@
+# A fork of worker-loader to fix issues in webpack5
+
 <div align="center">
   <a href="https://github.com/webpack/webpack">
     <img width="200" height="200" src="https://webpack.js.org/assets/icon-square-big.svg">
