@@ -1,6 +1,6 @@
 {
   "name": "codingclip-worker-loader",
-  "version": "3.0.8",
+  "version": "3.0.9",
   "description": "worker loader module for webpack",
   "license": "MIT",
   "repository": "webpack-contrib/worker-loader",
@@ -37,7 +37,7 @@
     "dist"
   ],
   "peerDependencies": {
-    "webpack": "^4.0.0 || ^5.0.0"
+    "webpack": "^4.0.0 || ^5.75.0"
   },
   "dependencies": {
     "loader-utils": "^2.0.0",
