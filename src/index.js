@@ -3,11 +3,6 @@ import path from "path";
 import { getOptions } from "loader-utils";
 import { validate } from "schema-utils";
 
-import NodeTargetPlugin from "webpack/lib/node/NodeTargetPlugin";
-import SingleEntryPlugin from "webpack/lib/SingleEntryPlugin";
-import WebWorkerTemplatePlugin from "webpack/lib/webworker/WebWorkerTemplatePlugin";
-import ExternalsPlugin from "webpack/lib/ExternalsPlugin";
-
 import schema from "./options.json";
 import supportWebpack5 from "./supportWebpack5";
 import supportWebpack4 from "./supportWebpack4";
@@ -17,21 +12,58 @@ import {
   getExternalsType,
 } from "./utils";
 
-let FetchCompileWasmPlugin;
-let FetchCompileAsyncWasmPlugin;
+// Cache for webpack plugins resolved from the compiler's webpack instance
+const webpackPluginsCache = new WeakMap();
 
-// determine the version of webpack peer dependency
-// eslint-disable-next-line global-require, import/no-unresolved
-const useWebpack5 = require("webpack/package.json").version.startsWith("5.");
+/**
+ * Get webpack plugins from the compiler's webpack instance.
+ * This ensures we use the same webpack version as the parent compiler,
+ * avoiding "compilation argument must be an instance of Compilation" errors
+ * when multiple webpack versions are installed.
+ */
+function getWebpackPlugins(compiler) {
+  if (webpackPluginsCache.has(compiler)) {
+    return webpackPluginsCache.get(compiler);
+  }
 
-if (useWebpack5) {
-  // eslint-disable-next-line global-require, import/no-unresolved
-  FetchCompileWasmPlugin = require("webpack/lib/web/FetchCompileWasmPlugin");
-  // eslint-disable-next-line global-require, import/no-unresolved
-  FetchCompileAsyncWasmPlugin = require("webpack/lib/web/FetchCompileAsyncWasmPlugin");
-} else {
-  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
-  FetchCompileWasmPlugin = require("webpack/lib/web/FetchCompileWasmTemplatePlugin");
+  const { webpack } = compiler;
+  const isWebpack5 =
+    webpack && webpack.version && webpack.version.startsWith("5.");
+
+  let plugins;
+
+  if (isWebpack5) {
+    // Webpack 5: use compiler.webpack to access modules
+    plugins = {
+      NodeTargetPlugin: webpack.node.NodeTargetPlugin,
+      EntryPlugin: webpack.EntryPlugin,
+      WebWorkerTemplatePlugin: webpack.webworker.WebWorkerTemplatePlugin,
+      ExternalsPlugin: webpack.ExternalsPlugin,
+      FetchCompileWasmPlugin: webpack.web.FetchCompileWasmPlugin,
+      FetchCompileAsyncWasmPlugin: webpack.web.FetchCompileAsyncWasmPlugin,
+      isWebpack5: true,
+    };
+  } else {
+    // Webpack 4: require from webpack (fallback for older versions without compiler.webpack)
+    // eslint-disable-next-line global-require, import/no-unresolved
+    plugins = {
+      // eslint-disable-next-line global-require, import/no-unresolved
+      NodeTargetPlugin: require("webpack/lib/node/NodeTargetPlugin"),
+      // eslint-disable-next-line global-require, import/no-unresolved
+      SingleEntryPlugin: require("webpack/lib/SingleEntryPlugin"),
+      // eslint-disable-next-line global-require, import/no-unresolved
+      WebWorkerTemplatePlugin: require("webpack/lib/webworker/WebWorkerTemplatePlugin"),
+      // eslint-disable-next-line global-require, import/no-unresolved
+      ExternalsPlugin: require("webpack/lib/ExternalsPlugin"),
+      // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+      FetchCompileWasmPlugin: require("webpack/lib/web/FetchCompileWasmTemplatePlugin"),
+      FetchCompileAsyncWasmPlugin: null,
+      isWebpack5: false,
+    };
+  }
+
+  webpackPluginsCache.set(compiler, plugins);
+  return plugins;
 }
 
 export default function loader() {}
@@ -45,6 +77,20 @@ export function pitch(request) {
     name: "Worker Loader",
     baseDataPath: "options",
   });
+
+  // Get webpack plugins from the compiler's webpack instance
+  // This ensures compatibility when multiple webpack versions are installed
+  const plugins = getWebpackPlugins(this._compiler);
+  const {
+    NodeTargetPlugin,
+    EntryPlugin,
+    SingleEntryPlugin,
+    WebWorkerTemplatePlugin,
+    ExternalsPlugin,
+    FetchCompileWasmPlugin,
+    FetchCompileAsyncWasmPlugin,
+    isWebpack5,
+  } = plugins;
 
   const workerContext = {};
   const compilerOptions = this._compiler.options || {};
@@ -93,7 +139,9 @@ export function pitch(request) {
     ).apply(workerContext.compiler);
   }
 
-  new SingleEntryPlugin(
+  // Use EntryPlugin for webpack 5, SingleEntryPlugin for webpack 4
+  const EntryPluginClass = isWebpack5 ? EntryPlugin : SingleEntryPlugin;
+  new EntryPluginClass(
     this.context,
     `!!${request}`,
     path.parse(this.resourcePath).name
